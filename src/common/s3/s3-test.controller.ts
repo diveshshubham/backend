@@ -1,6 +1,7 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { S3_CLIENT } from './s3.provider';
+import { ApiResponse } from '../../utils/api-response';
 
 @Controller('s3-test')
 export class S3TestController {
@@ -17,9 +18,9 @@ export class S3TestController {
       }),
     );
 
-    return {
+    return ApiResponse.success('S3 connectivity OK', {
       bucket: process.env.AWS_S3_BUCKET,
       objectCount: result.KeyCount ?? 0,
-    };
+    });
   }
 }

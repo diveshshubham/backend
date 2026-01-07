@@ -17,6 +17,9 @@ export class Media {
   @Prop()
   size?: number;
 
+  @Prop({ type: [String], default: [] })
+  tags: string[];
+
   @Prop({ default: false })
   isDeleted: boolean;
 }

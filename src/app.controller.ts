@@ -4,6 +4,7 @@ import { Connection } from 'mongoose';
 import Redis from 'ioredis';
 
 import { REDIS_CLIENT } from './common/redis/redis.provider';
+import { ApiResponse } from './utils/api-response';
 
 @Controller()
 export class AppController {
@@ -24,7 +25,7 @@ export class AppController {
       redisConnected = false;
     }
 
-    return {
+    return ApiResponse.success('Health check OK', {
       status: 'ok',
       timestamp: new Date().toISOString(),
       mongo: {
@@ -34,6 +35,6 @@ export class AppController {
       redis: {
         connected: redisConnected,
       },
-    };
+    });
   }
 }

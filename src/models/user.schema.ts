@@ -5,10 +5,10 @@ export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
 export class User {
-  @Prop({ unique: true, sparse: true })
+  @Prop()
   email?: string;
 
-  @Prop({ unique: true, sparse: true })
+  @Prop()
   phone?: string;
 
   @Prop()
@@ -22,3 +22,13 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Unique only when a real string is present (allows multiple docs with missing/null email/phone)
+UserSchema.index(
+  { email: 1 },
+  { unique: true, partialFilterExpression: { email: { $type: 'string' } } },
+);
+UserSchema.index(
+  { phone: 1 },
+  { unique: true, partialFilterExpression: { phone: { $type: 'string' } } },
+);

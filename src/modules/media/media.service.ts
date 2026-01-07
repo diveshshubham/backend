@@ -1,40 +1,127 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import { Media, MediaDocument } from '../../models/media.schema';
+import { Album, AlbumDocument } from '../../models/albums.schema';
 
 @Injectable()
 export class MediaService {
   constructor(
     @InjectModel(Media.name)
     private mediaModel: Model<MediaDocument>,
+    @InjectModel(Album.name)
+    private albumModel: Model<AlbumDocument>,
   ) {}
 
-  create(data: {
-    albumId: string;
-    key: string;
-    contentType: string;
-    size?: number;
-  }) {
-    return this.mediaModel.create({
-      albumId: new Types.ObjectId(data.albumId),
+  async assertAlbumOwnedByUser(albumId: string, userId: string) {
+    if (!Types.ObjectId.isValid(albumId)) {
+      throw new BadRequestException('Invalid albumId');
+    }
+
+    const album = await this.albumModel.findById(albumId).select('userId').lean();
+    if (!album) {
+      throw new NotFoundException('Album not found');
+    }
+
+    if (String(album.userId) !== String(userId)) {
+      throw new ForbiddenException('You do not have access to this album');
+    }
+  }
+
+  async create(data: { albumId: string; key: string; contentType: string; size?: number; userId: string }) {
+    await this.assertAlbumOwnedByUser(data.albumId, data.userId);
+
+    const media = await this.mediaModel.create({
+      albumId: data.albumId,
       key: data.key,
       contentType: data.contentType,
       size: data.size,
     });
+
+    const album = await this.albumModel.findById(data.albumId);
+    if (!album) {
+      // should be impossible because assertAlbumOwnedByUser already checked, but keep safe
+      throw new NotFoundException('Album not found');
+    }
+
+    // increment photo count
+    album.photoCount += 1;
+
+    // auto set cover image if missing
+    if (!album.coverImage) {
+      album.coverImage = data.key;
+    }
+
+    // album can only be public once it has media
+    if (album.photoCount >= 1 && album.isPublicRequested) {
+      album.isPublic = true;
+    }
+
+    await album.save();
+
+    return media;
   }
 
-  findByAlbum(albumId: string) {
+
+  async findByAlbum(albumId: string, userId: string) {
+    await this.assertAlbumOwnedByUser(albumId, userId);
     return this.mediaModel.find({
       albumId,
       isDeleted: false,
     }).sort({ createdAt: -1 });
   }
 
-  markDeleted(mediaId: string) {
-    return this.mediaModel.findByIdAndUpdate(mediaId, {
-      isDeleted: true,
-    });
+  async markDeleted(mediaId: string, userId: string) {
+    if (!Types.ObjectId.isValid(mediaId)) {
+      throw new BadRequestException('Invalid mediaId');
+    }
+
+    const media = await this.mediaModel.findById(mediaId);
+    if (!media) {
+      throw new NotFoundException('Media not found');
+    }
+
+    await this.assertAlbumOwnedByUser(String(media.albumId), userId);
+
+    if (media.isDeleted) {
+      return media;
+    }
+
+    media.isDeleted = true;
+    await media.save();
+
+    const album = await this.albumModel.findById(media.albumId);
+    if (!album) {
+      return media;
+    }
+
+    album.photoCount = Math.max(0, (album.photoCount ?? 0) - 1);
+
+    // if album becomes empty, it must be private
+    if (album.photoCount <= 0) {
+      album.isPublic = false;
+    }
+
+    await album.save();
+
+    return media;
+  }
+
+  async updateTags(mediaId: string, userId: string, tags: string[]) {
+    if (!Types.ObjectId.isValid(mediaId)) {
+      throw new BadRequestException('Invalid mediaId');
+    }
+
+    const media = await this.mediaModel.findById(mediaId);
+    if (!media || media.isDeleted) {
+      throw new NotFoundException('Media not found');
+    }
+
+    await this.assertAlbumOwnedByUser(String(media.albumId), userId);
+
+    media.tags = tags;
+    await media.save();
+    return media;
   }
 }
