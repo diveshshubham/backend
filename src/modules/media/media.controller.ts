@@ -19,7 +19,9 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Inject } from '@nestjs/common';
 import { S3_CLIENT } from '../../common/s3/s3.provider';
 import { UpdateMediaTagsDto } from './dto/update-media-tags.dto';
+import { UpdateMediaDetailsDto } from './dto/update-media-details.dto';
 import { ApiResponse } from '../../utils/api-response';
+import { Types } from 'mongoose';
 
 @Controller('media')
 @UseGuards(JwtAuthGuard)
@@ -35,15 +37,24 @@ export class MediaController {
         @Query('contentType') contentType: string,
         @Req() req: any,
     ) {
-        if (!albumId || !contentType) {
-            throw new BadRequestException('albumId and contentType are required');
+        if (!contentType) {
+            throw new BadRequestException('contentType is required');
         }
-
-        await this.mediaService.assertAlbumOwnedByUser(albumId, req.user.sub);
 
         const extension = contentType.split('/')[1];
         const { v4: uuid } = await import('uuid');
-        const key = `albums/${albumId}/${uuid()}.${extension}`;
+
+        // If albumId is a real Mongo ObjectId, enforce ownership and upload into that album folder.
+        // If albumId is missing/temporary (e.g. during album creation before we have a DB id),
+        // allow a draft upload under the current user.
+        let key: string;
+        if (albumId && Types.ObjectId.isValid(albumId)) {
+            await this.mediaService.assertAlbumOwnedByUser(albumId, req.user.sub);
+            key = `albums/${albumId}/${uuid()}.${extension}`;
+        } else {
+            key = `albums/drafts/${req.user.sub}/cover/${uuid()}.${extension}`;
+        }
+
         const command = new PutObjectCommand({
             Bucket: process.env.AWS_S3_BUCKET!,
             Key: key,
@@ -59,10 +70,18 @@ export class MediaController {
 
     @Post()
     async saveMedia(@Body() body: any, @Req() req: any) {
-        const { albumId, key, contentType, size } = body;
+        const { albumId, key, contentType, size, title, description, location, story, tags, isPublic } = body;
 
         if (!albumId || !key || !contentType) {
             throw new BadRequestException('albumId, key and contentType are required');
+        }
+
+        if (typeof tags !== 'undefined' && !Array.isArray(tags)) {
+            throw new BadRequestException('tags must be an array of strings');
+        }
+
+        if (typeof isPublic !== 'undefined' && typeof isPublic !== 'boolean') {
+            throw new BadRequestException('isPublic must be a boolean');
         }
 
         const media = await this.mediaService.create({
@@ -71,6 +90,12 @@ export class MediaController {
             contentType,
             size,
             userId: req.user.sub,
+            title,
+            description,
+            location,
+            story,
+            tags,
+            isPublic,
         });
 
         return ApiResponse.success('Media saved', { media });
@@ -101,6 +126,26 @@ export class MediaController {
 
         const media = await this.mediaService.updateTags(mediaId, req.user.sub, body.tags);
         return ApiResponse.success('Media tags updated', { media });
+    }
+
+    @Patch(':mediaId/details')
+    async updateMediaDetails(
+        @Param('mediaId') mediaId: string,
+        @Body() body: UpdateMediaDetailsDto,
+        @Req() req: any,
+    ) {
+        const media = await this.mediaService.updateDetails(mediaId, req.user.sub, body ?? {});
+        return ApiResponse.success('Media details updated', { media });
+    }
+
+    // Set this media as the album cover (album.coverImage = media.key)
+    @Patch(':mediaId/make-cover')
+    async makeMediaAlbumCover(
+        @Param('mediaId') mediaId: string,
+        @Req() req: any,
+    ) {
+        const album = await this.mediaService.setAsAlbumCover(mediaId, req.user.sub);
+        return ApiResponse.success('Album cover updated from media', { album });
     }
 
 }

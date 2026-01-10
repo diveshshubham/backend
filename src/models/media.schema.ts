@@ -17,8 +17,26 @@ export class Media {
   @Prop()
   size?: number;
 
+  // Optional per-photo details
+  @Prop()
+  title?: string;
+
+  @Prop()
+  description?: string;
+
+  @Prop()
+  location?: string;
+
+  // Longer free-form story content about this photo
+  @Prop()
+  story?: string;
+
   @Prop({ type: [String], default: [] })
   tags: string[];
+
+  // Per-photo visibility (album visibility still applies)
+  @Prop({ default: true })
+  isPublic: boolean;
 
   @Prop({ default: false })
   isDeleted: boolean;
