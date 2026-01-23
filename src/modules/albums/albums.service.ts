@@ -89,5 +89,55 @@ export class AlbumsService {
     await album.save();
     return album;
   }
-  
+
+  async updateDetails(
+    albumId: string,
+    userId: string,
+    patch: {
+      title?: string;
+      description?: string;
+      location?: string;
+      story?: string;
+      isPublic?: boolean;
+    },
+  ) {
+    const album = await this.findOwnedAlbum(albumId, userId);
+
+    let changed = false;
+
+    if (typeof patch.title === 'string') {
+      album.title = patch.title;
+      changed = true;
+    }
+    if (typeof patch.description === 'string') {
+      album.description = patch.description;
+      changed = true;
+    }
+    if (typeof patch.location === 'string') {
+      album.location = patch.location;
+      changed = true;
+    }
+    if (typeof patch.story === 'string') {
+      album.story = patch.story;
+      changed = true;
+    }
+
+    if (typeof patch.isPublic === 'boolean') {
+      if (patch.isPublic) {
+        album.isPublicRequested = true;
+        album.isPublic = (album.photoCount ?? 0) > 0;
+      } else {
+        album.isPublic = false;
+        album.isPublicRequested = false;
+      }
+      changed = true;
+    }
+
+    if (!changed) {
+      throw new BadRequestException('No valid fields to update');
+    }
+
+    await album.save();
+    return album;
+  }
 }

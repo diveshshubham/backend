@@ -5,6 +5,7 @@ import { ApiResponse } from '../../utils/api-response';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import { UpdateAlbumCoverDto } from './dto/update-album-cover.dto';
 import { UpdateAlbumVisibilityDto } from './dto/update-album-visibility.dto';
+import { UpdateAlbumDto } from './dto/update-album.dto';
 import { Inject } from '@nestjs/common';
 import { S3_CLIENT } from '../../common/s3/s3.provider';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -47,6 +48,16 @@ export class AlbumsController {
       'Albums fetched successfully',
       { albums },
     );
+  }
+
+  @Patch(':albumId')
+  async updateAlbum(
+    @Param('albumId') albumId: string,
+    @Body() body: UpdateAlbumDto,
+    @Req() req: any,
+  ) {
+    const album = await this.albumsService.updateDetails(albumId, req.user.sub, body);
+    return ApiResponse.success('Album updated', { album });
   }
 
   // Upload a cover image from the client (local file). Client uploads to S3 using this presigned URL.

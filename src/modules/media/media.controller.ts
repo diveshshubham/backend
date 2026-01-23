@@ -22,6 +22,7 @@ import { UpdateMediaTagsDto } from './dto/update-media-tags.dto';
 import { UpdateMediaDetailsDto } from './dto/update-media-details.dto';
 import { ApiResponse } from '../../utils/api-response';
 import { Types } from 'mongoose';
+import { CreatePresignedUrlsDto } from './dto/create-presigned-urls.dto';
 
 @Controller('media')
 @UseGuards(JwtAuthGuard)
@@ -30,6 +31,60 @@ export class MediaController {
         @Inject(S3_CLIENT) private readonly s3: S3Client,
         private readonly mediaService: MediaService
     ) { }
+
+    @Post('presigned-urls')
+    async getPresignedUrlsBatch(
+        @Body() body: CreatePresignedUrlsDto,
+        @Req() req: any,
+    ) {
+        const albumId = body.albumId;
+        const files = body.files ?? [];
+
+        if (!albumId || !Types.ObjectId.isValid(albumId)) {
+            throw new BadRequestException('Valid albumId is required');
+        }
+
+        // single DB check for the whole batch
+        await this.mediaService.assertAlbumOwnedByUser(albumId, req.user.sub);
+
+        const { v4: uuid } = await import('uuid');
+
+        const expiresIn = Math.min(Math.max(Number(body.expiresInSeconds ?? 300), 60), 60 * 10); // 1–10 min
+
+        const uploads = await Promise.all(
+            files.map(async (file) => {
+                const contentType = file.contentType;
+                const subtype = (contentType.split('/')[1] || '').toLowerCase();
+                const extension =
+                    subtype === 'jpeg' ? 'jpg'
+                        : subtype === 'png' ? 'png'
+                            : subtype === 'webp' ? 'webp'
+                                : subtype === 'heic' ? 'heic'
+                                    : subtype === 'heif' ? 'heif'
+                                        : 'bin';
+
+                const key = `albums/${albumId}/${uuid()}.${extension}`;
+
+                const command = new PutObjectCommand({
+                    Bucket: process.env.AWS_S3_BUCKET!,
+                    Key: key,
+                    ContentType: contentType,
+                });
+
+                const uploadUrl = await getSignedUrl(this.s3, command, {
+                    expiresIn,
+                });
+
+                return { key, uploadUrl, contentType };
+            })
+        );
+
+        return ApiResponse.success('Presigned upload URLs generated', {
+            albumId,
+            expiresInSeconds: expiresIn,
+            uploads,
+        });
+    }
 
     @Get('presigned-url')
     async getPresignedUrl(

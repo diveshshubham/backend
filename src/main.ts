@@ -29,7 +29,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // ✅ BACKEND PORT (MATCH FRONTEND EXPECTATION)
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || 3002;
   await app.listen(port);
 
   console.log(`🚀 Server started on http://localhost:${port}/api`);
